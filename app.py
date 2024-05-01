@@ -12,14 +12,14 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # Bot token obtained from BotFather in Telegram.
-TOKEN = '7040780745:AAFYiU11m-zR1toUYAFRU9tsig6eVKjcd14'
+TOKEN = 'token'
 bot = Bot(token=TOKEN)
 router = Router()
 
 model = whisper.load_model("tiny")
 
 # Set your OpenAI API key here
-openai.api_key = 'sk-proj-iwyTBpRKqRpHqvBofuXKT3BlbkFJvA1EbJk1zo6rMqnxGKyA'
+openai.api_key = 'key'
 
 
 greeted_users = set()
