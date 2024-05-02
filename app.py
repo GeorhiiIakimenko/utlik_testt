@@ -68,10 +68,25 @@ async def fetch_gpt_response(user_question):
     mandatory_questions = [line.strip() for line in lines if line.strip().startswith('*')]
     optional_questions = [line.strip() for line in lines if not line.strip().startswith('*')]
 
-    intro = "Ты профессиональный менеджер по сбору информации.Общайся коректно .спрашивай вопросы по порядку из 1111.txt .и только после того как ответит пользователь."
-    questions = '\n'.join(mandatory_questions + optional_questions)
+    intro = '''Ты профессиональный менеджер по сбору информации.
+    Общайся корректно, задавай вопросы по порядку.
+    Если пользователь ответил на обязательный вопрос некорректно, скажи об этом пользователю и перезадай вопрос.
+    Если пользователь некорректно ответил на дополнительный вопрос, скажи об этом пользователи и спроси, не хочет ли он пропустить этот вопрос.'''
 
-    prompt = f"{intro}\n\nHere are the questions to ask:\n{questions}\n\nUser's initial question: {user_question}\n\nBased on the user's responses, determine the next steps."
+    prompt = f'''{intro}
+    
+    Вот список обязательных вопросов:
+    {mandatory_questions}
+    
+    Вот список дополнительных вопросов:
+    {optional_questions}
+    
+    Первоначальный вопрос пользователя: {user_question}
+    
+    На основании ответов пользователя определите дальнейшие действия.
+    
+    Когда все вопросы заданы поблагодари пользователя за ответ, и попрощайся'''
+    
     try:
         response = openai.ChatCompletion.create(
             model="gpt-4-turbo",
