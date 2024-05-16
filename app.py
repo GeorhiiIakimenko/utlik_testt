@@ -39,6 +39,7 @@ engine = create_engine('sqlite:///client_data.db')  # SQLite database
 Session = sessionmaker(bind=engine)
 session = Session()
 
+
 # Define a model to store client data
 class ClientData(Base):
     __tablename__ = 'client_data'
@@ -103,7 +104,9 @@ class ClientData(Base):
     passport_30_31_page = Column(String)
     passport_registration_page = Column(String)
 
+
 Base.metadata.create_all(engine)
+
 
 # FSM states
 class ClientDataForm(StatesGroup):
@@ -166,6 +169,7 @@ class ClientDataForm(StatesGroup):
     passport_main_page = State()
     passport_30_31_page = State()
     passport_registration_page = State()
+
 
 # Labels for client data fields with mandatory information
 fields = [
@@ -230,11 +234,13 @@ fields = [
     ("passport_registration_page", "Разворот с регистрацией*", True),
 ]
 
+
 # Функция генерации вопросов с помощью GPT-4 на русском языке
 async def generate_question(current_state_label):
     prompt = f"Сформулируй вопрос для получения {current_state_label} от клиента."
     response = await fetch_gpt_response(prompt)
     return response if response else f"Предоставьте, пожалуйста, {current_state_label}."
+
 
 # Получение ответа от GPT-4
 async def fetch_gpt_response(prompt):
@@ -242,7 +248,8 @@ async def fetch_gpt_response(prompt):
         response = openai.ChatCompletion.create(
             model="gpt-4-turbo",
             messages=[
-                {"role": "system", "content": "Составляй вопросы на русском языке для сбора персональных данных. Сбор данных обязателен, если человек не хочет отвечать, постарайся, чтобы он ответил"},
+                {"role": "system",
+                 "content": "Составляй вопросы на русском языке для сбора персональных данных. Сбор данных обязателен, если человек не хочет отвечать, постарайся, чтобы он ответил"},
                 {"role": "user", "content": prompt}
             ],
             max_tokens=100
@@ -252,18 +259,30 @@ async def fetch_gpt_response(prompt):
         logger.error(f"Error generating GPT-4 response: {str(e)}")
         return None
 
+
 # Обработчики состояний для сохранения данных в базе
 async def save_data(state: FSMContext):
     data = await state.get_data()
-    new_entry = ClientData(**data)
-    session.add(new_entry)
-    session.commit()
+    # Remove temporary state data
+    data.pop('current_field', None)
+    data.pop('current_index', None)
+
+    try:
+        new_entry = ClientData(**data)
+        session.add(new_entry)
+        session.commit()
+    except TypeError as e:
+        logger.error(f"Error saving data to database: {str(e)}")
+        return False
 
     bitrix_response = await send_data_to_bitrix(data)
     if bitrix_response:
         logger.info("Data successfully sent to Bitrix24.")
     else:
         logger.error("Failed to send data to Bitrix24.")
+        return False
+    return True
+
 
 # Функция отправки данных в Bitrix24
 async def send_data_to_bitrix(data):
@@ -345,24 +364,13 @@ async def send_data_to_bitrix(data):
                 logger.error(f"Error sending data to Bitrix24: {response.status}")
                 return None
 
-# Обработчики состояний для сохранения данных в базе
-async def save_data_to(state: FSMContext):
-    data = await state.get_data()
-    new_entry = ClientData(**data)
-    session.add(new_entry)
-    session.commit()
-
-    bitrix_response = await send_data_to_bitrix(data)
-    if bitrix_response:
-        logger.info("Data successfully sent to Bitrix24.")
-    else:
-        logger.error("Failed to send data to Bitrix24.")
 
 # Общий обработчик для всех состояний
 @router.message(Command("lead"))
 async def start_lead(message: Message, state: FSMContext):
     await message.answer("Добро пожаловать! Начнем сбор вашей информации.")
     await process_next_field(message, state, 0)
+
 
 async def process_next_field(message: Message, state: FSMContext, index: int):
     if index < len(fields):
@@ -371,8 +379,12 @@ async def process_next_field(message: Message, state: FSMContext, index: int):
         question = await generate_question(label)
         await message.answer(question)
     else:
-        await save_data_to(state)
-        await message.answer("Спасибо, что предоставили всю информацию! Данные успешно отправлены в Bitrix24.")
+        success = await save_data(state)
+        if success:
+            await message.answer("Спасибо, что предоставили всю информацию! Данные успешно отправлены в Bitrix24.")
+        else:
+            await message.answer("Произошла ошибка при сохранении данных. Пожалуйста, попробуйте снова.")
+
 
 @router.message()
 async def process_field(message: Message, state: FSMContext):
@@ -386,19 +398,23 @@ async def process_field(message: Message, state: FSMContext):
     else:
         await handle_generic_message(message)
 
+
 # Обработчик команды /start
 @router.message(Command("start"))
 async def start_message(message: Message):
     await message.answer("Привет! Я бот-менеджер. Чем могу помочь?")
+
 
 async def handle_generic_message(message: Message):
     prompt = f"Respond to the user message: {message.text}"
     response = await fetch_gpt_response(prompt)
     await message.answer(response)
 
+
 # Запуск бота
 async def main():
     await dp.start_polling(bot)
+
 
 if __name__ == '__main__':
     asyncio.run(main())
