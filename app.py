@@ -1,6 +1,5 @@
 import asyncio
 import logging
-import openai
 import aiohttp
 from aiogram import Bot, Dispatcher
 from aiogram.types import Message
@@ -8,11 +7,10 @@ from aiogram.filters import Command
 from aiogram.dispatcher.router import Router
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.storage.memory import MemoryStorage
-from aiogram.fsm.state import State, StatesGroup
 from sqlalchemy import create_engine, Column, Integer, String
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
-import whisper
+from aiogram.filters.state import State, StatesGroup
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -26,19 +24,11 @@ dp = Dispatcher(storage=storage)
 router = Router()
 dp.include_router(router)
 
-model = whisper.load_model("tiny")
-
-# OpenAI API key
-openai.api_key = 'Api Key'
-
-greeted_users = set()
-
 # Database setup using SQLAlchemy
 Base = declarative_base()
 engine = create_engine('sqlite:///client_data.db')  # SQLite database
 Session = sessionmaker(bind=engine)
 session = Session()
-
 
 # Define a model to store client data
 class ClientData(Base):
@@ -104,9 +94,7 @@ class ClientData(Base):
     passport_30_31_page = Column(String)
     passport_registration_page = Column(String)
 
-
 Base.metadata.create_all(engine)
-
 
 # FSM states
 class ClientDataForm(StatesGroup):
@@ -169,7 +157,6 @@ class ClientDataForm(StatesGroup):
     passport_main_page = State()
     passport_30_31_page = State()
     passport_registration_page = State()
-
 
 # Labels for client data fields with mandatory information
 fields = [
@@ -234,32 +221,6 @@ fields = [
     ("passport_registration_page", "Разворот с регистрацией*", True),
 ]
 
-
-# Функция генерации вопросов с помощью GPT-4 на русском языке
-async def generate_question(current_state_label):
-    prompt = f"Сформулируй вопрос для получения {current_state_label} от клиента."
-    response = await fetch_gpt_response(prompt)
-    return response if response else f"Предоставьте, пожалуйста, {current_state_label}."
-
-
-# Получение ответа от GPT-4
-async def fetch_gpt_response(prompt):
-    try:
-        response = openai.ChatCompletion.create(
-            model="gpt-4-turbo",
-            messages=[
-                {"role": "system",
-                 "content": "Составляй вопросы на русском языке для сбора персональных данных. Сбор данных обязателен, если человек не хочет отвечать, постарайся, чтобы он ответил"},
-                {"role": "user", "content": prompt}
-            ],
-            max_tokens=100
-        )
-        return response['choices'][0]['message']['content']
-    except Exception as e:
-        logger.error(f"Error generating GPT-4 response: {str(e)}")
-        return None
-
-
 # Обработчики состояний для сохранения данных в базе
 async def save_data(state: FSMContext):
     data = await state.get_data()
@@ -282,7 +243,6 @@ async def save_data(state: FSMContext):
         logger.error("Failed to send data to Bitrix24.")
         return False
     return True
-
 
 # Функция отправки данных в Bitrix24
 async def send_data_to_bitrix(data):
@@ -364,20 +324,17 @@ async def send_data_to_bitrix(data):
                 logger.error(f"Error sending data to Bitrix24: {response.status}")
                 return None
 
-
 # Общий обработчик для всех состояний
 @router.message(Command("lead"))
 async def start_lead(message: Message, state: FSMContext):
     await message.answer("Добро пожаловать! Начнем сбор вашей информации.")
     await process_next_field(message, state, 0)
 
-
 async def process_next_field(message: Message, state: FSMContext, index: int):
     if index < len(fields):
         field, label, mandatory = fields[index]
         await state.update_data(current_field=field, current_index=index)
-        question = await generate_question(label)
-        await message.answer(question)
+        await message.answer(f"Пожалуйста, предоставьте {label}")
     else:
         success = await save_data(state)
         if success:
@@ -396,25 +353,12 @@ async def process_field(message: Message, state: FSMContext):
         await state.update_data({current_field: message.text})
         await process_next_field(message, state, current_index + 1)
     else:
-        await handle_generic_message(message)
-
-
-# Обработчик команды /start
-@router.message(Command("start"))
-async def start_message(message: Message):
-    await message.answer("Привет! Я бот-менеджер. Чем могу помочь?")
-
-
-async def handle_generic_message(message: Message):
-    prompt = f"Respond to the user message: {message.text}"
-    response = await fetch_gpt_response(prompt)
-    await message.answer(response)
+        await message.answer("Привет! Я бот-менеджер. Чем могу помочь?")
 
 
 # Запуск бота
 async def main():
     await dp.start_polling(bot)
-
 
 if __name__ == '__main__':
     asyncio.run(main())
