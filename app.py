@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import openai
 import aiohttp
 from aiogram import Bot, Dispatcher
 from aiogram.types import Message
@@ -30,6 +31,10 @@ engine = create_engine('sqlite:///client_data.db')  # SQLite database
 Session = sessionmaker(bind=engine)
 session = Session()
 
+# OpenAI API key
+openai.api_key = 'Your-OpenAI-API-Key'
+
+
 # Define a model to store client data
 class ClientData(Base):
     __tablename__ = 'client_data'
@@ -40,7 +45,6 @@ class ClientData(Base):
     mobile_phone = Column(String)
     additional_phone = Column(String)
     email = Column(String)
-    passport_data = Column(String)
     birth_date = Column(String)
     personal_number = Column(String)
     leasing_item = Column(String)
@@ -94,7 +98,9 @@ class ClientData(Base):
     passport_30_31_page = Column(String)
     passport_registration_page = Column(String)
 
+
 Base.metadata.create_all(engine)
+
 
 # FSM states
 class ClientDataForm(StatesGroup):
@@ -104,7 +110,6 @@ class ClientDataForm(StatesGroup):
     mobile_phone = State()
     additional_phone = State()
     email = State()
-    passport_data = State()
     birth_date = State()
     personal_number = State()
     leasing_item = State()
@@ -158,6 +163,7 @@ class ClientDataForm(StatesGroup):
     passport_30_31_page = State()
     passport_registration_page = State()
 
+
 # Labels for client data fields with mandatory information
 fields = [
     ("surname", "Фамилия*", True),
@@ -166,7 +172,6 @@ fields = [
     ("mobile_phone", "Мобильный телефон*", True),
     ("additional_phone", "Дополнительный телефон", False),
     ("email", "Email", False),
-    ("passport_data", "Паспортные данные", False),
     ("birth_date", "Дата рождения*", True),
     ("personal_number", "Личный номер*", True),
     ("leasing_item", "Наименование предмета лизинга*", True),
@@ -177,33 +182,33 @@ fields = [
     ("leasing_duration", "Срок договора*", True),
     ("place_of_birth", "Место рождения", False),
     ("gender", "Пол*", True),
-    ("criminal_record", "Судимость*", True),
-    ("document", "Документ", False),
+    ("criminal_record", "Наличие судимости*", True),
+    ("document", "Документ, удостоверяющий личность (паспорт, ВНЖ)", False),
     ("citizenship", "Гражданство", False),
-    ("series", "Серия*", True),
-    ("number", "Номер*", True),
-    ("issue_date", "Дата Выдачи*", True),
-    ("expiration_date", "Срок действия*", True),
-    ("issued_by", "Кем выдан*", True),
-    ("registration_index", "Индекс", False),
-    ("registration_country", "Страна*", True),
-    ("registration_region", "Область", False),
-    ("registration_district", "Район", False),
-    ("registration_locality", "Населенный пункт*", True),
-    ("registration_street", "Улица*", True),
-    ("registration_house", "Дом*", True),
-    ("registration_building", "Строение, корпус", False),
-    ("registration_apartment", "Квартира", False),
-    ("residence_index", "Индекс", False),
-    ("residence_country", "Страна*", True),
-    ("residence_region", "Область", False),
-    ("residence_district", "Район", False),
-    ("residence_locality", "Населенный пункт*", True),
-    ("residence_street", "Улица*", True),
-    ("residence_house", "Дом*", True),
-    ("residence_building", "Строение, корпус", False),
-    ("residence_apartment", "Квартира", False),
-    ("workplace_name", "Наименование организации*", True),
+    ("series", "Серия (паспорта, ВНЖ)*", True),
+    ("number", "Номер (паспорта, ВНЖ)*", True),
+    ("issue_date", "Дата Выдачи (паспорта, ВНЖ)*", True),
+    ("expiration_date", "Срок действия (паспорта, ВНЖ)*", True),
+    ("issued_by", "Кем выдан (паспорт, ВНЖ)*", True),
+    ("registration_index", "Индекс по прописке", False),
+    ("registration_country", "Страна по прописке*", True),
+    ("registration_region", "Область по прописке", False),
+    ("registration_district", "Район по прописке", False),
+    ("registration_locality", "Населенный пункт по прописке*", True),
+    ("registration_street", "Улица по прописке*", True),
+    ("registration_house", "Дом по прописке*", True),
+    ("registration_building", "Строение, корпус по прописке", False),
+    ("registration_apartment", "Квартира по прописке", False),
+    ("residence_index", "Индекс фактического места жительства", False),
+    ("residence_country", "Страна фактического места жительства*", True),
+    ("residence_region", "Область фактического места жительства", False),
+    ("residence_district", "Район фактического места жительства", False),
+    ("residence_locality", "Населенный пункт фактического места жительства*", True),
+    ("residence_street", "Улица фактического места жительства*", True),
+    ("residence_house", "Дом фактического места жительства*", True),
+    ("residence_building", "Строение, корпус фактического места жительства", False),
+    ("residence_apartment", "Квартира фактического места жительства", False),
+    ("workplace_name", "Наименование организации, в которой работаете в данный момент*", True),
     ("position", "Должность*", True),
     ("work_experience", "Стаж*", True),
     ("income", "Доход*", True),
@@ -212,14 +217,15 @@ fields = [
     ("dependents_count", "Количество иждивенцев", False),
     ("education", "Образование*", True),
     ("military_duty", "Воинская обязанность*", True),
-    ("relative_surname", "Фамилия*", True),
-    ("relative_first_name", "Имя*", True),
-    ("relative_patronymic", "Отчество*", True),
-    ("relative_phone", "Телефон*", True),
-    ("passport_main_page", "Главный разворот*", True),
-    ("passport_30_31_page", "Разворот 30-31*", True),
-    ("passport_registration_page", "Разворот с регистрацией*", True),
+    ("relative_surname", "Фамилия близкого родственника, либо супруга/супруги*", True),
+    ("relative_first_name", "Имя близкого родственника, либо супруга/супруги*", True),
+    ("relative_patronymic", "Отчество близкого родственника, либо супруга/супруги*", True),
+    ("relative_phone", "Телефон близкого родственника, либо супруга/супруги*", True),
+    ("passport_main_page", "Главный разворот (паспорта, ВНЖ)*", True),
+    ("passport_30_31_page", "Разворот 30-31 (паспорта, ВНЖ)*", True),
+    ("passport_registration_page", "Разворот с регистрацией (паспорта, ВНЖ)*", True),
 ]
+
 
 # Обработчики состояний для сохранения данных в базе
 async def save_data(state: FSMContext):
@@ -244,9 +250,10 @@ async def save_data(state: FSMContext):
         return False
     return True
 
+
 # Функция отправки данных в Bitrix24
 async def send_data_to_bitrix(data):
-    bitrix_webhook_url = 'https://yourdomain.bitrix24.com/rest/1/webhook/'
+    bitrix_webhook_url = 'https://b24-kw5z35.bitrix24.by/rest/1/re2olb9c6h83be03/'
     lead_data = {
         'fields': {
             'TITLE': f"{data.get('surname')} {data.get('first_name')} {data.get('patronymic')}",
@@ -261,7 +268,6 @@ async def send_data_to_bitrix(data):
             'COMMENTS': (
                 f"Дата рождения: {data.get('birth_date')}\n"
                 f"Личный номер: {data.get('personal_number')}\n"
-                f"Паспортные данные: {data.get('passport_data')}\n"
                 f"Место рождения: {data.get('place_of_birth')}\n"
                 f"Пол: {data.get('gender')}\n"
                 f"Судимость: {data.get('criminal_record')}\n"
@@ -316,19 +322,53 @@ async def send_data_to_bitrix(data):
         }
     }
 
-    async with aiohttp.ClientSession() as session:
-        async with session.post(bitrix_webhook_url, json=lead_data) as response:
+    async with aiohttp.ClientSession() as session1:
+        async with session1.post(bitrix_webhook_url, json=lead_data) as response:
             if response.status == 200:
                 return await response.json()
             else:
                 logger.error(f"Error sending data to Bitrix24: {response.status}")
                 return None
 
+
+# Обработчики состояний для сохранения данных в базе
+async def save_data_db(state: FSMContext):
+    data = await state.get_data()
+    # Remove temporary state data
+    data.pop('current_field', None)
+    data.pop('current_index', None)
+
+    try:
+        new_entry = ClientData(**data)
+        session.add(new_entry)
+        session.commit()
+    except TypeError as e:
+        logger.error(f"Error saving data to database: {str(e)}")
+        return False
+
+    bitrix_response = await send_data_to_bitrix(data)
+    if bitrix_response:
+        logger.info("Data successfully sent to Bitrix24.")
+    else:
+        logger.error("Failed to send data to Bitrix24.")
+        return False
+    return True
+
+
+@router.message(Command("start"))
+async def start_message(message: Message):
+    initial_prompt = "Привет! Чем я могу вам помочь?"
+    await message.answer(initial_prompt)
+    response = await fetch_gpt_response(initial_prompt)
+    await message.answer(response)
+
+
 # Общий обработчик для всех состояний
 @router.message(Command("lead"))
 async def start_lead(message: Message, state: FSMContext):
     await message.answer("Добро пожаловать! Начнем сбор вашей информации.")
     await process_next_field(message, state, 0)
+
 
 async def process_next_field(message: Message, state: FSMContext, index: int):
     if index < len(fields):
@@ -339,21 +379,48 @@ async def process_next_field(message: Message, state: FSMContext, index: int):
         success = await save_data(state)
         if success:
             await message.answer("Спасибо, что предоставили всю информацию! Данные успешно отправлены в Bitrix24.")
+            await continue_conversation(message)
         else:
             await message.answer("Произошла ошибка при сохранении данных. Пожалуйста, попробуйте снова.")
 
 
-@router.message()
-async def process_field(message: Message, state: FSMContext):
-    data = await state.get_data()
-    current_field = data.get('current_field')
-    current_index = data.get('current_index')
+async def continue_conversation(message: Message):
+    initial_prompt = "Чем еще я могу вам помочь?"
+    response = await fetch_gpt_response(initial_prompt)
+    await message.answer(response)
 
-    if current_field:
-        await state.update_data({current_field: message.text})
-        await process_next_field(message, state, current_index + 1)
-    else:
-        await message.answer("Привет! Я бот-менеджер. Чем могу помочь?")
+
+@router.message(Command("info"))
+async def info_handler(message: Message):
+    await message.answer("Это команда-заглушка для /info. Здесь будет информация.")
+
+
+# Функция получения ответа от GPT-4
+async def fetch_gpt_response(prompt):
+    try:
+        response = await openai.ChatCompletion.create(
+            model="gpt-4-turbo",
+            messages=[
+                {"role": "system", "content": "Act as a friendly manager from https://yoowills.by and respond to user queries.You can say to user write command /lead to start registration or /info for information"},
+                {"role": "user", "content": prompt}
+            ],
+            max_tokens=100
+        )
+        return response['choices'][0]['message']['content']
+    except Exception as e:
+        logger.error(f"Error generating GPT-4 response: {str(e)}")
+        return "Извините, произошла ошибка при обработке вашего запроса."
+
+
+@router.message()
+async def generic_message_handler(message: Message):
+    if message.text.startswith('/'):
+        return  # Ignore other commands
+
+    prompt = message.text
+    response = await fetch_gpt_response(prompt)
+    await message.answer(response)
+
 
 
 # Запуск бота
