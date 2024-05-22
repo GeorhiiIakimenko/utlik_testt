@@ -4,7 +4,7 @@ import openai
 import aiohttp
 from aiogram import Bot, Dispatcher
 from aiogram.types import Message
-from aiogram.filters import Command, state
+from aiogram.filters import Command
 from aiogram.dispatcher.router import Router
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.storage.memory import MemoryStorage
@@ -12,6 +12,7 @@ from sqlalchemy import create_engine, Column, Integer, String
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 from aiogram.filters.state import State, StatesGroup
+import os
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -102,137 +103,75 @@ class ClientData(Base):
 Base.metadata.create_all(engine)
 
 
-# FSM states
-class ClientDataForm(StatesGroup):
-    surname = State()
-    first_name = State()
-    patronymic = State()
-    mobile_phone = State()
-    additional_phone = State()
-    email = State()
-    birth_date = State()
-    personal_number = State()
-    leasing_item = State()
-    leasing_cost = State()
-    leasing_quantity = State()
-    leasing_advance = State()
-    leasing_currency = State()
-    leasing_duration = State()
-    place_of_birth = State()
-    gender = State()
-    criminal_record = State()
-    document = State()
-    citizenship = State()
-    series = State()
-    number = State()
-    issue_date = State()
-    expiration_date = State()
-    issued_by = State()
-    registration_index = State()
-    registration_country = State()
-    registration_region = State()
-    registration_district = State()
-    registration_locality = State()
-    registration_street = State()
-    registration_house = State()
-    registration_building = State()
-    registration_apartment = State()
-    residence_index = State()
-    residence_country = State()
-    residence_region = State()
-    residence_district = State()
-    residence_locality = State()
-    residence_street = State()
-    residence_house = State()
-    residence_building = State()
-    residence_apartment = State()
-    workplace_name = State()
-    position = State()
-    work_experience = State()
-    income = State()
-    hr_phone = State()
-    marital_status = State()
-    dependents_count = State()
-    education = State()
-    military_duty = State()
-    relative_surname = State()
-    relative_first_name = State()
-    relative_patronymic = State()
-    relative_phone = State()
-    passport_main_page = State()
-    passport_30_31_page = State()
-    passport_registration_page = State()
-
-
 # Labels for client data fields with mandatory information
 fields = [
-    ("surname", "Фамилия*", True),
-    ("first_name", "Имя*", True),
-    ("patronymic", "Отчество*", True),
-    ("mobile_phone", "Мобильный телефон*", True),
-    ("additional_phone", "Дополнительный телефон", False),
-    ("email", "Email", False),
-    ("birth_date", "Дата рождения*", True),
-    ("personal_number", "Личный номер*", True),
-    ("leasing_item", "Наименование предмета лизинга*", True),
-    ("leasing_cost", "Стоимость*", True),
-    ("leasing_quantity", "Количество*", True),
-    ("leasing_advance", "Аванс", False),
-    ("leasing_currency", "Валюта договора*", True),
-    ("leasing_duration", "Срок договора*", True),
-    ("place_of_birth", "Место рождения", False),
-    ("gender", "Пол*", True),
-    ("criminal_record", "Наличие судимости*", True),
-    ("document", "Документ, удостоверяющий личность (паспорт, ВНЖ)", False),
-    ("citizenship", "Гражданство", False),
-    ("series", "Серия (паспорта, ВНЖ)*", True),
-    ("number", "Номер (паспорта, ВНЖ)*", True),
-    ("issue_date", "Дата Выдачи (паспорта, ВНЖ)*", True),
-    ("expiration_date", "Срок действия (паспорта, ВНЖ)*", True),
-    ("issued_by", "Кем выдан (паспорт, ВНЖ)*", True),
-    ("registration_index", "Индекс по прописке", False),
-    ("registration_country", "Страна по прописке*", True),
-    ("registration_region", "Область по прописке", False),
-    ("registration_district", "Район по прописке", False),
-    ("registration_locality", "Населенный пункт по прописке*", True),
-    ("registration_street", "Улица по прописке*", True),
-    ("registration_house", "Дом по прописке*", True),
-    ("registration_building", "Строение, корпус по прописке", False),
-    ("registration_apartment", "Квартира по прописке", False),
-    ("residence_index", "Индекс фактического места жительства", False),
-    ("residence_country", "Страна фактического места жительства*", True),
-    ("residence_region", "Область фактического места жительства", False),
-    ("residence_district", "Район фактического места жительства", False),
-    ("residence_locality", "Населенный пункт фактического места жительства*", True),
-    ("residence_street", "Улица фактического места жительства*", True),
-    ("residence_house", "Дом фактического места жительства*", True),
-    ("residence_building", "Строение, корпус фактического места жительства", False),
-    ("residence_apartment", "Квартира фактического места жительства", False),
-    ("workplace_name", "Наименование организации, в которой работаете в данный момент*", True),
-    ("position", "Должность*", True),
-    ("work_experience", "Стаж*", True),
-    ("income", "Доход*", True),
-    ("hr_phone", "Телефон отдела кадров или бухгалтерии*", True),
-    ("marital_status", "Семейное положение*", True),
-    ("dependents_count", "Количество иждивенцев", False),
-    ("education", "Образование*", True),
-    ("military_duty", "Воинская обязанность*", True),
-    ("relative_surname", "Фамилия близкого родственника, либо супруга/супруги*", True),
-    ("relative_first_name", "Имя близкого родственника, либо супруга/супруги*", True),
-    ("relative_patronymic", "Отчество близкого родственника, либо супруга/супруги*", True),
-    ("relative_phone", "Телефон близкого родственника, либо супруга/супруги*", True),
-    ("passport_main_page", "Главный разворот (паспорта, ВНЖ)*", True),
-    ("passport_30_31_page", "Разворот 30-31 (паспорта, ВНЖ)*", True),
-    ("passport_registration_page", "Разворот с регистрацией (паспорта, ВНЖ)*", True),
+    ("surname", "Фамилия*", True, False),
+    ("first_name", "Имя*", True, False),
+    ("patronymic", "Отчество*", True, False),
+    ("mobile_phone", "Мобильный телефон*", True, False),
+    ("additional_phone", "Дополнительный телефон", False, False),
+    ("email", "Email", False, False),
+    ("birth_date", "Дата рождения*", True, False),
+    ("personal_number", "Личный номер*", True, False),
+    ("leasing_item", "Наименование предмета лизинга*", True, False),
+    ("leasing_cost", "Стоимость*", True, False),
+    ("leasing_quantity", "Количество*", True, False),
+    ("leasing_advance", "Аванс", False, False),
+    ("leasing_currency", "Валюта договора*", True, False),
+    ("leasing_duration", "Срок договора*", True, False),
+    ("place_of_birth", "Место рождения", False, False),
+    ("gender", "Пол*", True, False),
+    ("criminal_record", "Наличие судимости*", True, False),
+    ("document", "Документ, удостоверяющий личность (паспорт, ВНЖ)", False, False),
+    ("citizenship", "Гражданство", False, False),
+    ("series", "Серия (паспорта, ВНЖ)*", True, False),
+    ("number", "Номер (паспорта, ВНЖ)*", True, False),
+    ("issue_date", "Дата Выдачи (паспорта, ВНЖ)*", True, False),
+    ("expiration_date", "Срок действия (паспорта, ВНЖ)*", True, False),
+    ("issued_by", "Кем выдан (паспорт, ВНЖ)*", True, False),
+    ("registration_index", "Индекс по прописке", False, False),
+    ("registration_country", "Страна по прописке*", True, False),
+    ("registration_region", "Область по прописке", False, False),
+    ("registration_district", "Район по прописке", False, False),
+    ("registration_locality", "Населенный пункт по прописке*", True, False),
+    ("registration_street", "Улица по прописке*", True, False),
+    ("registration_house", "Дом по прописке*", True, False),
+    ("registration_building", "Строение, корпус по прописке", False, False),
+    ("registration_apartment", "Квартира по прописке", False, False),
+    ("residence_index", "Индекс фактического места жительства", False, False),
+    ("residence_country", "Страна фактического места жительства*", True, False),
+    ("residence_region", "Область фактического места жительства", False, False),
+    ("residence_district", "Район фактического места жительства", False, False),
+    ("residence_locality", "Населенный пункт фактического места жительства*", True, False),
+    ("residence_street", "Улица фактического места жительства*", True, False),
+    ("residence_house", "Дом фактического места жительства*", True, False),
+    ("residence_building", "Строение, корпус фактического места жительства", False, False),
+    ("residence_apartment", "Квартира фактического места жительства", False, False),
+    ("workplace_name", "Наименование организации, в которой работаете в данный момент*", True, False),
+    ("position", "Должность*", True, False),
+    ("work_experience", "Стаж*", True, False),
+    ("income", "Доход*", True, False),
+    ("hr_phone", "Телефон отдела кадров или бухгалтерии*", True, False),
+    ("marital_status", "Семейное положение*", True, False),
+    ("dependents_count", "Количество иждивенцев", False, False),
+    ("education", "Образование*", True, False),
+    ("military_duty", "Воинская обязанность*", True, False),
+    ("relative_surname", "Фамилия близкого родственника, либо супруга/супруги*", True, False),
+    ("relative_first_name", "Имя близкого родственника, либо супруга/супруги*", True, False),
+    ("relative_patronymic", "Отчество близкого родственника, либо супруга/супруги*", True, False),
+    ("relative_phone", "Телефон близкого родственника, либо супруга/супруги*", True, False),
+    ("passport_main_page", "Главный разворот (паспорта, ВНЖ)*", True, True),
+    ("passport_30_31_page", "Разворот 30-31 (паспорта, ВНЖ)*", True, True),
+    ("passport_registration_page", "Разворот с регистрацией (паспорта, ВНЖ)*", True, True),
 ]
 
 
-# Обработчики состояний для сохранения данных в базе
-async def save_data(state: FSMContext):
+async def save_data_db(state: FSMContext):
     data = await state.get_data()
     # Remove temporary state data
     data.pop('current_field', None)
     data.pop('current_index', None)
+    data.pop('is_image', None)
 
     try:
         new_entry = ClientData(**data)
@@ -372,8 +311,8 @@ async def start_lead(message: Message, state: FSMContext):
 
 async def process_next_field(message: Message, state: FSMContext, index: int):
     if index < len(fields):
-        field, label, mandatory = fields[index]
-        await state.update_data(current_field=field, current_index=index)
+        field, label, mandatory, is_image = fields[index]
+        await state.update_data(current_field=field, current_index=index, is_image=is_image)
         await message.answer(f"Пожалуйста, предоставьте {label}")
     else:
         success = await save_data_db(state)
@@ -382,6 +321,7 @@ async def process_next_field(message: Message, state: FSMContext, index: int):
             await continue_conversation(message)
         else:
             await message.answer("Произошла ошибка при сохранении данных. Пожалуйста, попробуйте снова.")
+
 
 
 
@@ -417,11 +357,25 @@ async def fetch_gpt_response(prompt):
 @router.message()
 async def generic_message_handler(message: Message, state: FSMContext):
     data = await state.get_data()
-    if 'current_field' in data or 'current_index' in data:
-        # Handle as part of the form filling process
+    if 'current_field' in data and 'current_index' in data:
         current_field = data.get('current_field')
         current_index = data.get('current_index')
-        await state.update_data({current_field: message.text})
+        is_image = data.get('is_image', False)
+
+        if is_image and message.photo:
+            photo = message.photo[-1]  # Get the highest resolution photo
+            photo_file = await bot.get_file(photo.file_id)
+            photo_dir = 'photos'
+            if not os.path.exists(photo_dir):
+                os.makedirs(photo_dir)
+            photo_path = f"{photo_dir}/{photo.file_id}.jpg"
+            await bot.download_file(photo_file.file_path, photo_path)
+            await state.update_data({current_field: photo_path})
+        elif not is_image:
+            await state.update_data({current_field: message.text})
+        else:
+            await message.answer("Пожалуйста, отправьте изображение.")
+
         await process_next_field(message, state, current_index + 1)
     else:
         if message.text.startswith('/'):
