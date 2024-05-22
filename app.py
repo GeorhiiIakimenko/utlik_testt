@@ -4,7 +4,7 @@ import openai
 import aiohttp
 from aiogram import Bot, Dispatcher
 from aiogram.types import Message
-from aiogram.filters import Command
+from aiogram.filters import Command, state
 from aiogram.dispatcher.router import Router
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.storage.memory import MemoryStorage
@@ -32,7 +32,7 @@ Session = sessionmaker(bind=engine)
 session = Session()
 
 # OpenAI API key
-openai.api_key = 'Your-OpenAI-API-Key'
+openai.api_key = 'API-key'
 
 
 # Define a model to store client data
@@ -376,7 +376,7 @@ async def process_next_field(message: Message, state: FSMContext, index: int):
         await state.update_data(current_field=field, current_index=index)
         await message.answer(f"Пожалуйста, предоставьте {label}")
     else:
-        success = await save_data(state)
+        success = await save_data_db(state)
         if success:
             await message.answer("Спасибо, что предоставили всю информацию! Данные успешно отправлены в Bitrix24.")
             await continue_conversation(message)
@@ -384,10 +384,12 @@ async def process_next_field(message: Message, state: FSMContext, index: int):
             await message.answer("Произошла ошибка при сохранении данных. Пожалуйста, попробуйте снова.")
 
 
+
 async def continue_conversation(message: Message):
     initial_prompt = "Чем еще я могу вам помочь?"
     response = await fetch_gpt_response(initial_prompt)
     await message.answer(response)
+
 
 
 @router.message(Command("info"))
@@ -413,17 +415,24 @@ async def fetch_gpt_response(prompt):
 
 
 @router.message()
-async def generic_message_handler(message: Message):
-    if message.text.startswith('/'):
-        return  # Ignore other commands
+async def generic_message_handler(message: Message, state: FSMContext):
+    data = await state.get_data()
+    if 'current_field' in data or 'current_index' in data:
+        # Handle as part of the form filling process
+        current_field = data.get('current_field')
+        current_index = data.get('current_index')
+        await state.update_data({current_field: message.text})
+        await process_next_field(message, state, current_index + 1)
+    else:
+        if message.text.startswith('/'):
+            return  # Ignore other commands
 
-    prompt = message.text
-    response = await fetch_gpt_response(prompt)
-    await message.answer(response)
+        prompt = message.text
+        response = await fetch_gpt_response(prompt)
+        await message.answer(response)
 
 
-
-# Запуск бота
+#Запуск бота
 async def main():
     await dp.start_polling(bot)
 
