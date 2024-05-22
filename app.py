@@ -8,10 +8,9 @@ from aiogram.filters import Command
 from aiogram.dispatcher.router import Router
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.storage.memory import MemoryStorage
-from sqlalchemy import create_engine, Column, Integer, String
+from sqlalchemy import create_engine, Column, Integer, String, Table, MetaData
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
-from aiogram.filters.state import State, StatesGroup
 import os
 
 # Set up logging
@@ -35,6 +34,72 @@ session = Session()
 # OpenAI API key
 openai.api_key = 'API-key'
 
+# Database setup using SQLAlchemy
+metadata = MetaData()
+
+client_data_table = Table(
+    'client_data', metadata,
+    Column('id', Integer, primary_key=True, autoincrement=True),
+    Column('surname', String),
+    Column('first_name', String),
+    Column('patronymic', String),
+    Column('mobile_phone', String),
+    Column('additional_phone', String),
+    Column('email', String),
+    Column('birth_date', String),
+    Column('personal_number', String),
+    Column('leasing_item', String),
+    Column('leasing_cost', String),
+    Column('leasing_quantity', String),
+    Column('leasing_advance', String),
+    Column('leasing_currency', String),
+    Column('leasing_duration', String),
+    Column('place_of_birth', String),
+    Column('gender', String),
+    Column('criminal_record', String),
+    Column('document', String),
+    Column('citizenship', String),
+    Column('series', String),
+    Column('number', String),
+    Column('issue_date', String),
+    Column('expiration_date', String),
+    Column('issued_by', String),
+    Column('registration_index', String),
+    Column('registration_country', String),
+    Column('registration_region', String),
+    Column('registration_district', String),
+    Column('registration_locality', String),
+    Column('registration_street', String),
+    Column('registration_house', String),
+    Column('registration_building', String),
+    Column('registration_apartment', String),
+    Column('residence_index', String),
+    Column('residence_country', String),
+    Column('residence_region', String),
+    Column('residence_district', String),
+    Column('residence_locality', String),
+    Column('residence_street', String),
+    Column('residence_house', String),
+    Column('residence_building', String),
+    Column('residence_apartment', String),
+    Column('workplace_name', String),
+    Column('position', String),
+    Column('work_experience', String),
+    Column('income', String),
+    Column('hr_phone', String),
+    Column('marital_status', String),
+    Column('dependents_count', String),
+    Column('education', String),
+    Column('military_duty', String),
+    Column('relative_surname', String),
+    Column('relative_first_name', String),
+    Column('relative_patronymic', String),
+    Column('relative_phone', String),
+    Column('passport_main_page', String),
+    Column('passport_30_31_page', String),
+    Column('passport_registration_page', String),
+    extend_existing=True
+)
 
 # Define a model to store client data
 class ClientData(Base):
@@ -166,30 +231,6 @@ fields = [
 ]
 
 
-async def save_data_db(state: FSMContext):
-    data = await state.get_data()
-    # Remove temporary state data
-    data.pop('current_field', None)
-    data.pop('current_index', None)
-    data.pop('is_image', None)
-
-    try:
-        new_entry = ClientData(**data)
-        session.add(new_entry)
-        session.commit()
-    except TypeError as e:
-        logger.error(f"Error saving data to database: {str(e)}")
-        return False
-
-    bitrix_response = await send_data_to_bitrix(data)
-    if bitrix_response:
-        logger.info("Data successfully sent to Bitrix24.")
-    else:
-        logger.error("Failed to send data to Bitrix24.")
-        return False
-    return True
-
-
 # Функция отправки данных в Bitrix24
 async def send_data_to_bitrix(data):
     bitrix_webhook_url = 'https://b24-kw5z35.bitrix24.by/rest/1/re2olb9c6h83be03/'
@@ -276,6 +317,7 @@ async def save_data_db(state: FSMContext):
     # Remove temporary state data
     data.pop('current_field', None)
     data.pop('current_index', None)
+    data.pop('is_image', None)
 
     try:
         new_entry = ClientData(**data)
@@ -292,6 +334,7 @@ async def save_data_db(state: FSMContext):
         logger.error("Failed to send data to Bitrix24.")
         return False
     return True
+
 
 
 @router.message(Command("start"))
