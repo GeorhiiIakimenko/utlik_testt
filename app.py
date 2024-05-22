@@ -398,7 +398,7 @@ async def info_handler(message: Message):
 # Функция получения ответа от GPT-4
 async def fetch_gpt_response(prompt):
     try:
-        response = await openai.ChatCompletion.create(
+        response = openai.ChatCompletion.create(
             model="gpt-4-turbo",
             messages=[
                 {"role": "system", "content": "Act as a friendly manager from https://yoowills.by and respond to user queries.You can say to user write command /lead to start registration or /info for information"},
