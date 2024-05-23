@@ -2,6 +2,7 @@ import asyncio
 import logging
 import openai
 import aiohttp
+import os
 from aiogram import Bot, Dispatcher
 from aiogram.types import Message
 from aiogram.filters import Command
@@ -11,7 +12,6 @@ from aiogram.fsm.storage.memory import MemoryStorage
 from sqlalchemy import create_engine, Column, Integer, String, Table, MetaData
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
-import os
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -164,7 +164,6 @@ class ClientData(Base):
     passport_30_31_page = Column(String)
     passport_registration_page = Column(String)
 
-
 Base.metadata.create_all(engine)
 
 
@@ -277,9 +276,6 @@ async def send_data_to_bitrix(data):
                 f"Имя родственника: {data.get('relative_first_name')}\n"
                 f"Отчество родственника: {data.get('relative_patronymic')}\n"
                 f"Телефон родственника: {data.get('relative_phone')}\n"
-                f"Главный разворот паспорта: {data.get('passport_main_page')}\n"
-                f"Разворот 30-31 паспорта: {data.get('passport_30_31_page')}\n"
-                f"Разворот с регистрацией паспорта: {data.get('passport_registration_page')}"
             ),
             'UF_CRM_1591122334': data.get('registration_index'),
             'UF_CRM_1591122335': data.get('registration_country'),
@@ -310,6 +306,16 @@ async def send_data_to_bitrix(data):
                 logger.error(f"Error sending data to Bitrix24: {response.status}")
                 return None
 
+async def upload_file_to_bitrix(file_path, bitrix_webhook_url):
+    file_name = os.path.basename(file_path)
+    files = {'file': (file_name, open(file_path, 'rb'))}
+    async with aiohttp.ClientSession() as session:
+        async with session.post(bitrix_webhook_url, data=files) as response:
+            if response.status == 200:
+                return await response.json()
+            else:
+                logger.error(f"Error uploading file to Bitrix24: {response.status}")
+                return None
 
 # Обработчики состояний для сохранения данных в базе
 async def save_data_db(state: FSMContext):
@@ -327,6 +333,19 @@ async def save_data_db(state: FSMContext):
         logger.error(f"Error saving data to database: {str(e)}")
         return False
 
+    # Upload images to Bitrix24 and update lead data
+    image_fields = ["passport_main_page", "passport_30_31_page", "passport_registration_page"]
+    bitrix_upload_url = 'https://b24-kw5z35.bitrix24.by/rest/1/re2olb9c6h83be03/disk.folder.uploadfile?'
+
+    for field in image_fields:
+        if field in data and data[field]:
+            upload_response = await upload_file_to_bitrix(data[field], bitrix_upload_url)
+            if upload_response and 'result' in upload_response:
+                file_id = upload_response['result']['ID']
+                data[field] = file_id
+            else:
+                logger.error(f"Failed to upload {field} to Bitrix24")
+
     bitrix_response = await send_data_to_bitrix(data)
     if bitrix_response:
         logger.info("Data successfully sent to Bitrix24.")
@@ -334,8 +353,6 @@ async def save_data_db(state: FSMContext):
         logger.error("Failed to send data to Bitrix24.")
         return False
     return True
-
-
 
 @router.message(Command("start"))
 async def start_message(message: Message):
@@ -365,15 +382,10 @@ async def process_next_field(message: Message, state: FSMContext, index: int):
         else:
             await message.answer("Произошла ошибка при сохранении данных. Пожалуйста, попробуйте снова.")
 
-
-
-
 async def continue_conversation(message: Message):
     initial_prompt = "Чем еще я могу вам помочь?"
     response = await fetch_gpt_response(initial_prompt)
     await message.answer(response)
-
-
 
 @router.message(Command("info"))
 async def info_handler(message: Message):
@@ -427,7 +439,6 @@ async def generic_message_handler(message: Message, state: FSMContext):
         prompt = message.text
         response = await fetch_gpt_response(prompt)
         await message.answer(response)
-
 
 #Запуск бота
 async def main():
