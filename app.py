@@ -2,14 +2,13 @@ import asyncio
 import logging
 import openai
 import aiohttp
-import os
 from aiogram import Bot, Dispatcher
 from aiogram.types import Message
 from aiogram.filters import Command
 from aiogram.dispatcher.router import Router
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.storage.memory import MemoryStorage
-from sqlalchemy import create_engine, Column, Integer, String, Table, MetaData
+from sqlalchemy import create_engine, Column, Integer, String
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 
@@ -33,73 +32,6 @@ session = Session()
 
 # OpenAI API key
 openai.api_key = 'API-key'
-
-# Database setup using SQLAlchemy
-metadata = MetaData()
-
-client_data_table = Table(
-    'client_data', metadata,
-    Column('id', Integer, primary_key=True, autoincrement=True),
-    Column('surname', String),
-    Column('first_name', String),
-    Column('patronymic', String),
-    Column('mobile_phone', String),
-    Column('additional_phone', String),
-    Column('email', String),
-    Column('birth_date', String),
-    Column('personal_number', String),
-    Column('leasing_item', String),
-    Column('leasing_cost', String),
-    Column('leasing_quantity', String),
-    Column('leasing_advance', String),
-    Column('leasing_currency', String),
-    Column('leasing_duration', String),
-    Column('place_of_birth', String),
-    Column('gender', String),
-    Column('criminal_record', String),
-    Column('document', String),
-    Column('citizenship', String),
-    Column('series', String),
-    Column('number', String),
-    Column('issue_date', String),
-    Column('expiration_date', String),
-    Column('issued_by', String),
-    Column('registration_index', String),
-    Column('registration_country', String),
-    Column('registration_region', String),
-    Column('registration_district', String),
-    Column('registration_locality', String),
-    Column('registration_street', String),
-    Column('registration_house', String),
-    Column('registration_building', String),
-    Column('registration_apartment', String),
-    Column('residence_index', String),
-    Column('residence_country', String),
-    Column('residence_region', String),
-    Column('residence_district', String),
-    Column('residence_locality', String),
-    Column('residence_street', String),
-    Column('residence_house', String),
-    Column('residence_building', String),
-    Column('residence_apartment', String),
-    Column('workplace_name', String),
-    Column('position', String),
-    Column('work_experience', String),
-    Column('income', String),
-    Column('hr_phone', String),
-    Column('marital_status', String),
-    Column('dependents_count', String),
-    Column('education', String),
-    Column('military_duty', String),
-    Column('relative_surname', String),
-    Column('relative_first_name', String),
-    Column('relative_patronymic', String),
-    Column('relative_phone', String),
-    Column('passport_main_page', String),
-    Column('passport_30_31_page', String),
-    Column('passport_registration_page', String),
-    extend_existing=True
-)
 
 # Define a model to store client data
 class ClientData(Base):
@@ -166,7 +98,6 @@ class ClientData(Base):
 
 Base.metadata.create_all(engine)
 
-
 # Labels for client data fields with mandatory information
 fields = [
     ("surname", "Фамилия*", True, False),
@@ -229,10 +160,9 @@ fields = [
     ("passport_registration_page", "Разворот с регистрацией (паспорта, ВНЖ)*", True, True),
 ]
 
-
 # Функция отправки данных в Bitrix24
 async def send_data_to_bitrix(data):
-    bitrix_webhook_url = 'https://b24-kw5z35.bitrix24.by/rest/1/re2olb9c6h83be03/'
+    bitrix_webhook_url = 'https://b24-kw5z35.bitrix24.by/rest/11/ffqo36u9m5t1zydv/crm.lead.add.json'
     lead_data = {
         'fields': {
             'TITLE': f"{data.get('surname')} {data.get('first_name')} {data.get('patronymic')}",
@@ -276,7 +206,16 @@ async def send_data_to_bitrix(data):
                 f"Имя родственника: {data.get('relative_first_name')}\n"
                 f"Отчество родственника: {data.get('relative_patronymic')}\n"
                 f"Телефон родственника: {data.get('relative_phone')}\n"
+                f"Главный разворот паспорта: {data.get('passport_main_page')}\n"
+                f"Разворот 30-31 паспорта: {data.get('passport_30_31_page')}\n"
+                f"Разворот с регистрацией паспорта: {data.get('passport_registration_page')}"
             ),
+            'UF_CRM_1716463005': data.get('birth_date'),
+            'UF_CRM_1716463034': data.get('issue_date'),
+            'UF_CRM_1716463053': data.get('expiration_date'),
+            'UF_CRM_1716463073': data.get('passport_main_page'),
+            'UF_CRM_1716463102': data.get('passport_30_31_page'),
+            'UF_CRM_1716463116': data.get('passport_registration_page'),
             'UF_CRM_1591122334': data.get('registration_index'),
             'UF_CRM_1591122335': data.get('registration_country'),
             'UF_CRM_1591122336': data.get('registration_region'),
@@ -298,23 +237,12 @@ async def send_data_to_bitrix(data):
         }
     }
 
-    async with aiohttp.ClientSession() as session1:
-        async with session1.post(bitrix_webhook_url, json=lead_data) as response:
+    async with aiohttp.ClientSession() as session:
+        async with session.post(bitrix_webhook_url, json=lead_data) as response:
             if response.status == 200:
                 return await response.json()
             else:
                 logger.error(f"Error sending data to Bitrix24: {response.status}")
-                return None
-
-async def upload_file_to_bitrix(file_path, bitrix_webhook_url):
-    file_name = os.path.basename(file_path)
-    files = {'file': (file_name, open(file_path, 'rb'))}
-    async with aiohttp.ClientSession() as session:
-        async with session.post(bitrix_webhook_url, data=files) as response:
-            if response.status == 200:
-                return await response.json()
-            else:
-                logger.error(f"Error uploading file to Bitrix24: {response.status}")
                 return None
 
 # Обработчики состояний для сохранения данных в базе
@@ -333,19 +261,6 @@ async def save_data_db(state: FSMContext):
         logger.error(f"Error saving data to database: {str(e)}")
         return False
 
-    # Upload images to Bitrix24 and update lead data
-    image_fields = ["passport_main_page", "passport_30_31_page", "passport_registration_page"]
-    bitrix_upload_url = 'https://b24-kw5z35.bitrix24.by/rest/1/re2olb9c6h83be03/disk.folder.uploadfile?'
-
-    for field in image_fields:
-        if field in data and data[field]:
-            upload_response = await upload_file_to_bitrix(data[field], bitrix_upload_url)
-            if upload_response and 'result' in upload_response:
-                file_id = upload_response['result']['ID']
-                data[field] = file_id
-            else:
-                logger.error(f"Failed to upload {field} to Bitrix24")
-
     bitrix_response = await send_data_to_bitrix(data)
     if bitrix_response:
         logger.info("Data successfully sent to Bitrix24.")
@@ -361,13 +276,11 @@ async def start_message(message: Message):
     response = await fetch_gpt_response(initial_prompt)
     await message.answer(response)
 
-
 # Общий обработчик для всех состояний
 @router.message(Command("lead"))
 async def start_lead(message: Message, state: FSMContext):
     await message.answer("Добро пожаловать! Начнем сбор вашей информации.")
     await process_next_field(message, state, 0)
-
 
 async def process_next_field(message: Message, state: FSMContext, index: int):
     if index < len(fields):
@@ -391,14 +304,13 @@ async def continue_conversation(message: Message):
 async def info_handler(message: Message):
     await message.answer("Это команда-заглушка для /info. Здесь будет информация.")
 
-
 # Функция получения ответа от GPT-4
 async def fetch_gpt_response(prompt):
     try:
         response = openai.ChatCompletion.create(
             model="gpt-4-turbo",
             messages=[
-                {"role": "system", "content": "Act as a friendly manager from https://yoowills.by and respond to user queries.You can say to user write command /lead to start registration or /info for information"},
+                {"role": "system", "content": "Act as a friendly manager from https://yoowills.by and respond to user queries. You can say to user write command /lead to start registration or /info for information"},
                 {"role": "user", "content": prompt}
             ],
             max_tokens=100
@@ -407,7 +319,6 @@ async def fetch_gpt_response(prompt):
     except Exception as e:
         logger.error(f"Error generating GPT-4 response: {str(e)}")
         return "Извините, произошла ошибка при обработке вашего запроса."
-
 
 @router.message()
 async def generic_message_handler(message: Message, state: FSMContext):
@@ -419,13 +330,10 @@ async def generic_message_handler(message: Message, state: FSMContext):
 
         if is_image and message.photo:
             photo = message.photo[-1]  # Get the highest resolution photo
-            photo_file = await bot.get_file(photo.file_id)
-            photo_dir = 'photos'
-            if not os.path.exists(photo_dir):
-                os.makedirs(photo_dir)
-            photo_path = f"{photo_dir}/{photo.file_id}.jpg"
-            await bot.download_file(photo_file.file_path, photo_path)
-            await state.update_data({current_field: photo_path})
+            file_id = photo.file_id
+            file = await bot.get_file(file_id)
+            file_url = f"https://api.telegram.org/file/bot{TOKEN}/{file.file_path}"
+            await state.update_data({current_field: file_url})
         elif not is_image:
             await state.update_data({current_field: message.text})
         else:
@@ -440,7 +348,7 @@ async def generic_message_handler(message: Message, state: FSMContext):
         response = await fetch_gpt_response(prompt)
         await message.answer(response)
 
-#Запуск бота
+# Запуск бота
 async def main():
     await dp.start_polling(bot)
 
