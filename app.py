@@ -1,37 +1,24 @@
-import asyncio
 import logging
-import openai
-import aiohttp
-from aiogram import Bot, Dispatcher
-from aiogram.types import Message
-from aiogram.filters import Command
-from aiogram.dispatcher.router import Router
-from aiogram.fsm.context import FSMContext
-from aiogram.fsm.storage.memory import MemoryStorage
+from telethon import TelegramClient, events
 from sqlalchemy import create_engine, Column, Integer, String
 from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy.orm import sessionmaker, scoped_session
+import openai
+import aiohttp
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Telegram bot token
-TOKEN = '7040780745:AAFYiU11m-zR1toUYAFRU9tsig6eVKjcd14'
-bot = Bot(token=TOKEN)
-storage = MemoryStorage()
-dp = Dispatcher(storage=storage)
-router = Router()
-dp.include_router(router)
+# OpenAI API key
+openai.api_key = 'api'
 
 # Database setup using SQLAlchemy
 Base = declarative_base()
-engine = create_engine('sqlite:///client_data.db')  # SQLite database
-Session = sessionmaker(bind=engine)
+engine = create_engine('sqlite:///client_data.db', connect_args={'check_same_thread': False})
+  # SQLite database
+Session = scoped_session(sessionmaker(bind=engine))
 session = Session()
-
-# OpenAI API key
-openai.api_key = 'API-key'
 
 # Define a model to store client data
 class ClientData(Base):
@@ -96,7 +83,16 @@ class ClientData(Base):
     passport_30_31_page = Column(String)
     passport_registration_page = Column(String)
 
+
 Base.metadata.create_all(engine)
+
+# Your API ID and Hash from https://my.telegram.org
+api_id = '29536561'
+api_hash = '13ee70158dd2ba67d56e36093272fc55'
+phone = '+79935654280'
+
+# Create the client and connect
+client = TelegramClient('userbot_session', api_id, api_hash)
 
 # Labels for client data fields with mandatory information
 fields = [
@@ -245,9 +241,10 @@ async def send_data_to_bitrix(data):
                 logger.error(f"Error sending data to Bitrix24: {response.status}")
                 return None
 
+
 # Обработчики состояний для сохранения данных в базе
-async def save_data_db(state: FSMContext):
-    data = await state.get_data()
+async def save_data_db(state):
+    data = state.get_data()
     # Remove temporary state data
     data.pop('current_field', None)
     data.pop('current_index', None)
@@ -269,42 +266,29 @@ async def save_data_db(state: FSMContext):
         return False
     return True
 
-@router.message(Command("start"))
-async def start_message(message: Message):
-    initial_prompt = "Привет! Чем я могу вам помочь?"
-    await message.answer(initial_prompt)
-    response = await fetch_gpt_response(initial_prompt)
-    await message.answer(response)
 
-# Общий обработчик для всех состояний
-@router.message(Command("lead"))
-async def start_lead(message: Message, state: FSMContext):
-    await message.answer("Добро пожаловать! Начнем сбор вашей информации.")
-    await process_next_field(message, state, 0)
-
-async def process_next_field(message: Message, state: FSMContext, index: int):
+async def process_next_field(event, state, index):
     if index < len(fields):
         field, label, mandatory, is_image = fields[index]
-        await state.update_data(current_field=field, current_index=index, is_image=is_image)
-        await message.answer(f"Пожалуйста, предоставьте {label}")
+        state['current_field'] = field
+        state['current_index'] = index
+        state['is_image'] = is_image
+        await event.respond(f"Пожалуйста, предоставьте {label}")
     else:
         success = await save_data_db(state)
         if success:
-            await message.answer("Спасибо, что предоставили всю информацию! Данные успешно отправлены в Bitrix24.")
-            await continue_conversation(message)
+            await event.respond("Спасибо, что предоставили всю информацию! Данные успешно отправлены в Bitrix24.")
+            await continue_conversation(event)
         else:
-            await message.answer("Произошла ошибка при сохранении данных. Пожалуйста, попробуйте снова.")
+            await event.respond("Произошла ошибка при сохранении данных. Пожалуйста, попробуйте снова.")
 
-async def continue_conversation(message: Message):
+
+async def continue_conversation(event):
     initial_prompt = "Чем еще я могу вам помочь?"
     response = await fetch_gpt_response(initial_prompt)
-    await message.answer(response)
+    await event.respond(response)
 
-@router.message(Command("info"))
-async def info_handler(message: Message):
-    await message.answer("Это команда-заглушка для /info. Здесь будет информация.")
 
-# Функция получения ответа от GPT-4
 async def fetch_gpt_response(prompt):
     try:
         response = openai.ChatCompletion.create(
@@ -320,37 +304,62 @@ async def fetch_gpt_response(prompt):
         logger.error(f"Error generating GPT-4 response: {str(e)}")
         return "Извините, произошла ошибка при обработке вашего запроса."
 
-@router.message()
-async def generic_message_handler(message: Message, state: FSMContext):
-    data = await state.get_data()
-    if 'current_field' in data and 'current_index' in data:
-        current_field = data.get('current_field')
-        current_index = data.get('current_index')
-        is_image = data.get('is_image', False)
 
-        if is_image and message.photo:
-            photo = message.photo[-1]  # Get the highest resolution photo
+@client.on(events.NewMessage(pattern='/start'))
+async def start_handler(event):
+    initial_prompt = "Привет! Чем я могу вам помочь?"
+    await event.respond(initial_prompt)
+    response = await fetch_gpt_response(initial_prompt)
+    await event.respond(response)
+
+
+
+@client.on(events.NewMessage(pattern='/lead'))
+async def lead_handler(event):
+    await event.respond("Добро пожаловать! Начнем сбор вашей информации.")
+    await process_next_field(event, {}, 0)
+
+
+@client.on(events.NewMessage)
+async def generic_handler(event):
+    state = {}  # Replace this with a proper state management
+    if 'current_field' in state and 'current_index' in state:
+        current_field = state.get('current_field')
+        current_index = state.get('current_index')
+        is_image = state.get('is_image', False)
+
+        if is_image and event.message.photo:
+            photo = event.message.photo[-1]  # Get the highest resolution photo
             file_id = photo.file_id
-            file = await bot.get_file(file_id)
-            file_url = f"https://api.telegram.org/file/bot{TOKEN}/{file.file_path}"
-            await state.update_data({current_field: file_url})
+            file = await client.download_media(file_id)
+            state[current_field] = file
         elif not is_image:
-            await state.update_data({current_field: message.text})
+            state[current_field] = event.message.message
         else:
-            await message.answer("Пожалуйста, отправьте изображение.")
+            await event.respond("Пожалуйста, отправьте изображение.")
 
-        await process_next_field(message, state, current_index + 1)
+        await process_next_field(event, state, current_index + 1)
     else:
-        if message.text.startswith('/'):
+        if event.message.message.startswith('/'):
             return  # Ignore other commands
 
-        prompt = message.text
+        prompt = event.message.message
         response = await fetch_gpt_response(prompt)
-        await message.answer(response)
+        await event.respond(response)
 
-# Запуск бота
+
 async def main():
-    await dp.start_polling(bot)
+    await client.connect()
+    if not client.is_user_authorized():
+        await client.send_code_request(phone)
+        await client.sign_in(phone, input('Enter the code: '))
+    logger.info("Client started")
+    await client.run_until_disconnected()
 
 if __name__ == '__main__':
-    asyncio.run(main())
+    client = TelegramClient('userbot_session', 29536561, '13ee70158dd2ba67d56e36093272fc55')
+    try:
+        client.loop.run_until_complete(main())
+    except (KeyboardInterrupt, SystemExit):
+        logger.info("Client stopped")
+
