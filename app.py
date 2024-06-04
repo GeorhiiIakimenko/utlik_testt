@@ -1,8 +1,5 @@
 import logging
 from telethon import TelegramClient, events
-from sqlalchemy import create_engine, Column, Integer, String
-from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import sessionmaker, scoped_session
 import openai
 import aiohttp
 
@@ -11,88 +8,25 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # OpenAI API key
-openai.api_key = 'api'
-
-# Database setup using SQLAlchemy
-Base = declarative_base()
-engine = create_engine('sqlite:///client_data.db', connect_args={'check_same_thread': False})
-  # SQLite database
-Session = scoped_session(sessionmaker(bind=engine))
-session = Session()
-
-# Define a model to store client data
-class ClientData(Base):
-    __tablename__ = 'client_data'
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    surname = Column(String)
-    first_name = Column(String)
-    patronymic = Column(String)
-    mobile_phone = Column(String)
-    additional_phone = Column(String)
-    email = Column(String)
-    birth_date = Column(String)
-    personal_number = Column(String)
-    leasing_item = Column(String)
-    leasing_cost = Column(String)
-    leasing_quantity = Column(String)
-    leasing_advance = Column(String)
-    leasing_currency = Column(String)
-    leasing_duration = Column(String)
-    place_of_birth = Column(String)
-    gender = Column(String)
-    criminal_record = Column(String)
-    document = Column(String)
-    citizenship = Column(String)
-    series = Column(String)
-    number = Column(String)
-    issue_date = Column(String)
-    expiration_date = Column(String)
-    issued_by = Column(String)
-    registration_index = Column(String)
-    registration_country = Column(String)
-    registration_region = Column(String)
-    registration_district = Column(String)
-    registration_locality = Column(String)
-    registration_street = Column(String)
-    registration_house = Column(String)
-    registration_building = Column(String)
-    registration_apartment = Column(String)
-    residence_index = Column(String)
-    residence_country = Column(String)
-    residence_region = Column(String)
-    residence_district = Column(String)
-    residence_locality = Column(String)
-    residence_street = Column(String)
-    residence_house = Column(String)
-    residence_building = Column(String)
-    residence_apartment = Column(String)
-    workplace_name = Column(String)
-    position = Column(String)
-    work_experience = Column(String)
-    income = Column(String)
-    hr_phone = Column(String)
-    marital_status = Column(String)
-    dependents_count = Column(String)
-    education = Column(String)
-    military_duty = Column(String)
-    relative_surname = Column(String)
-    relative_first_name = Column(String)
-    relative_patronymic = Column(String)
-    relative_phone = Column(String)
-    passport_main_page = Column(String)
-    passport_30_31_page = Column(String)
-    passport_registration_page = Column(String)
-
-
-Base.metadata.create_all(engine)
+openai.api_key = 'APi key'
 
 # Your API ID and Hash from https://my.telegram.org
-api_id = '29536561'
+api_id = 29536561
 api_hash = '13ee70158dd2ba67d56e36093272fc55'
 phone = '+79935654280'
 
 # Create the client and connect
 client = TelegramClient('userbot_session', api_id, api_hash)
+
+# User states for managing data collection
+user_states = {}
+
+# Functions to get and set user state
+def get_user_state(user_id):
+    return user_states.get(user_id, {})
+
+def set_user_state(user_id, state):
+    user_states[user_id] = state
 
 # Labels for client data fields with mandatory information
 fields = [
@@ -156,7 +90,7 @@ fields = [
     ("passport_registration_page", "Разворот с регистрацией (паспорта, ВНЖ)*", True, True),
 ]
 
-# Функция отправки данных в Bitrix24
+# Function to send data to Bitrix24
 async def send_data_to_bitrix(data):
     bitrix_webhook_url = 'https://b24-kw5z35.bitrix24.by/rest/11/ffqo36u9m5t1zydv/crm.lead.add.json'
     lead_data = {
@@ -242,31 +176,6 @@ async def send_data_to_bitrix(data):
                 return None
 
 
-# Обработчики состояний для сохранения данных в базе
-async def save_data_db(state):
-    data = state.get_data()
-    # Remove temporary state data
-    data.pop('current_field', None)
-    data.pop('current_index', None)
-    data.pop('is_image', None)
-
-    try:
-        new_entry = ClientData(**data)
-        session.add(new_entry)
-        session.commit()
-    except TypeError as e:
-        logger.error(f"Error saving data to database: {str(e)}")
-        return False
-
-    bitrix_response = await send_data_to_bitrix(data)
-    if bitrix_response:
-        logger.info("Data successfully sent to Bitrix24.")
-    else:
-        logger.error("Failed to send data to Bitrix24.")
-        return False
-    return True
-
-
 async def process_next_field(event, state, index):
     if index < len(fields):
         field, label, mandatory, is_image = fields[index]
@@ -275,12 +184,12 @@ async def process_next_field(event, state, index):
         state['is_image'] = is_image
         await event.respond(f"Пожалуйста, предоставьте {label}")
     else:
-        success = await save_data_db(state)
+        success = await send_data_to_bitrix(state)
         if success:
             await event.respond("Спасибо, что предоставили всю информацию! Данные успешно отправлены в Bitrix24.")
             await continue_conversation(event)
         else:
-            await event.respond("Произошла ошибка при сохранении данных. Пожалуйста, попробуйте снова.")
+            await event.respond("Произошла ошибка при отправке данных. Пожалуйста, попробуйте снова.")
 
 
 async def continue_conversation(event):
@@ -307,42 +216,54 @@ async def fetch_gpt_response(prompt):
 
 @client.on(events.NewMessage(pattern='/start'))
 async def start_handler(event):
-    initial_prompt = "Привет! Чем я могу вам помочь?"
+    initial_prompt = "Привет! Чем я могу вам помочь? Вы можете использовать команду /lead для начала регистрации или /info для получения информации."
     await event.respond(initial_prompt)
-    response = await fetch_gpt_response(initial_prompt)
-    await event.respond(response)
-
 
 
 @client.on(events.NewMessage(pattern='/lead'))
 async def lead_handler(event):
-    await event.respond("Добро пожаловать! Начнем сбор вашей информации.")
-    await process_next_field(event, {}, 0)
+    state = get_user_state(event.sender_id)
+    state['current_index'] = 0
+    set_user_state(event.sender_id, state)
+    await process_next_field(event, state, 0)
+
+
+@client.on(events.NewMessage(pattern='/message (.*)'))
+async def message_handler(event):
+    phone_number = event.pattern_match.group(1)
+    async with client.conversation(phone_number) as conv:
+        try:
+            # Sending a test message
+            await conv.send_message("Hello! Welcome to Yoowills! How can I assist you today? If you need information, you can type /info or if you're ready to start registering, just type /lead. I'm here to help!")
+            await event.respond(f"Сообщение отправлено пользователю с номером {phone_number}.")
+        except Exception as e:
+            await event.respond(f"Не удалось отправить сообщение пользователю с номером {phone_number}. Ошибка: {str(e)}")
 
 
 @client.on(events.NewMessage)
 async def generic_handler(event):
-    state = {}  # Replace this with a proper state management
+    if event.message.message.startswith('/'):
+        return  # Ignore other commands
+
+    state = get_user_state(event.sender_id)
     if 'current_field' in state and 'current_index' in state:
-        current_field = state.get('current_field')
-        current_index = state.get('current_index')
-        is_image = state.get('is_image', False)
+        current_field = state['current_field']
+        current_index = state['current_index']
+        is_image = state['is_image']
 
         if is_image and event.message.photo:
-            photo = event.message.photo[-1]  # Get the highest resolution photo
-            file_id = photo.file_id
-            file = await client.download_media(file_id)
+            photo = event.message.photo  # Get the photo
+            file = await client.download_media(photo)
             state[current_field] = file
         elif not is_image:
             state[current_field] = event.message.message
         else:
             await event.respond("Пожалуйста, отправьте изображение.")
 
+        state['current_index'] = current_index + 1
+        set_user_state(event.sender_id, state)
         await process_next_field(event, state, current_index + 1)
     else:
-        if event.message.message.startswith('/'):
-            return  # Ignore other commands
-
         prompt = event.message.message
         response = await fetch_gpt_response(prompt)
         await event.respond(response)
@@ -350,16 +271,14 @@ async def generic_handler(event):
 
 async def main():
     await client.connect()
-    if not client.is_user_authorized():
+    if not await client.is_user_authorized():
         await client.send_code_request(phone)
         await client.sign_in(phone, input('Enter the code: '))
     logger.info("Client started")
     await client.run_until_disconnected()
 
 if __name__ == '__main__':
-    client = TelegramClient('userbot_session', 29536561, '13ee70158dd2ba67d56e36093272fc55')
     try:
         client.loop.run_until_complete(main())
     except (KeyboardInterrupt, SystemExit):
         logger.info("Client stopped")
-
