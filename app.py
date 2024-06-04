@@ -2,6 +2,9 @@ import logging
 from telethon import TelegramClient, events
 import openai
 import aiohttp
+from telethon.tl.functions.messages import SendMessageRequest
+from telethon.tl.types import InputPeerUser
+import random
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -92,7 +95,7 @@ fields = [
 
 # Function to send data to Bitrix24
 async def send_data_to_bitrix(data):
-    bitrix_webhook_url = 'https://b24-kw5z35.bitrix24.by/rest/11/ffqo36u9m5t1zydv/crm.lead.add.json'
+    bitrix_webhook_url = 'https://b24-aoh6pm.bitrix24.by/rest/1/73qmo797mpgi2oib/crm.lead.add.json'
     lead_data = {
         'fields': {
             'TITLE': f"{data.get('surname')} {data.get('first_name')} {data.get('patronymic')}",
@@ -211,7 +214,7 @@ async def fetch_gpt_response(prompt):
         return response['choices'][0]['message']['content']
     except Exception as e:
         logger.error(f"Error generating GPT-4 response: {str(e)}")
-        return "Извините, произошла ошибка при обработке вашего запроса."
+        return "Извините, произошла ошибка при обработке вашего запроса.Повторите еще раз."
 
 
 @client.on(events.NewMessage(pattern='/start'))
@@ -231,13 +234,21 @@ async def lead_handler(event):
 @client.on(events.NewMessage(pattern='/message (.*)'))
 async def message_handler(event):
     phone_number = event.pattern_match.group(1)
-    async with client.conversation(phone_number) as conv:
-        try:
-            # Sending a test message
-            await conv.send_message("Hello! Welcome to Yoowills! How can I assist you today? If you need information, you can type /info or if you're ready to start registering, just type /lead. I'm here to help!")
+    try:
+        user = await client.get_entity(phone_number)
+        if hasattr(user, 'phone'):
+            input_peer_user = InputPeerUser(user_id=user.id, access_hash=user.access_hash)
+            random_id = random.randint(1, 1018)  # Generate a random long ID for the message
+            await client(SendMessageRequest(
+                peer=input_peer_user,
+                message="Hello! Welcome to Yoowills! How can I assist you today? If you need information, you can type /info or if you're ready to start registering, just type /lead. I'm here to help!",
+                random_id=random_id
+            ))
             await event.respond(f"Сообщение отправлено пользователю с номером {phone_number}.")
-        except Exception as e:
-            await event.respond(f"Не удалось отправить сообщение пользователю с номером {phone_number}. Ошибка: {str(e)}")
+        else:
+            await event.respond(f"Не удалось найти пользователя с номером {phone_number}.")
+    except Exception as e:
+        await event.respond(f"Не удалось отправить сообщение пользователю с номером {phone_number}. Ошибка: {str(e)}")
 
 
 @client.on(events.NewMessage)
