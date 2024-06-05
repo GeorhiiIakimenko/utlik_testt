@@ -5,6 +5,7 @@ import aiohttp
 from telethon.tl.functions.messages import SendMessageRequest
 from telethon.tl.types import InputPeerUser
 import random
+import os
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -264,11 +265,17 @@ async def generic_handler(event):
         is_image = state['is_image']
 
         if is_image and event.message.photo:
-            photo = event.message.photo  # Get the photo
-            file = await client.download_media(photo)
-            uploaded_file = await client.upload_file(file)
-            file_id = uploaded_file.id  # Use the file ID
-            state[current_field] = file_id  # Save the file ID instead of the file name
+            photo = event.message.photo[-1]  # Get the highest resolution photo
+            photo_file = await client.download_media(photo)
+            photo_dir = 'photos'
+            if not os.path.exists(photo_dir):
+                os.makedirs(photo_dir)
+            photo_path = f"{photo_dir}/{photo.id}.jpg"
+            os.rename(photo_file, photo_path)
+
+            file_id = photo.id
+            file_url = f"https://api.telegram.org/file/bot{api_hash}/{photo_path}"
+            state[current_field] = file_url
         elif not is_image:
             state[current_field] = event.message.message
         else:
