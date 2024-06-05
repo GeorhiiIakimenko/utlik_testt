@@ -93,9 +93,10 @@ fields = [
     ("passport_registration_page", "Разворот с регистрацией (паспорта, ВНЖ)*", True, True),
 ]
 
+
 # Function to send data to Bitrix24
 async def send_data_to_bitrix(data):
-    bitrix_webhook_url = 'https://b24-aoh6pm.bitrix24.by/rest/1/73qmo797mpgi2oib/crm.lead.add.json'
+    bitrix_webhook_url = 'https://b24-2k8cw3.bitrix24.by/rest/10/wisly82rw0dlne2m/crm.lead.add.json'
     lead_data = {
         'fields': {
             'TITLE': f"{data.get('surname')} {data.get('first_name')} {data.get('patronymic')}",
@@ -265,7 +266,9 @@ async def generic_handler(event):
         if is_image and event.message.photo:
             photo = event.message.photo  # Get the photo
             file = await client.download_media(photo)
-            state[current_field] = file
+            uploaded_file = await client.upload_file(file)
+            file_id = uploaded_file.id  # Use the file ID
+            state[current_field] = file_id  # Save the file ID instead of the file name
         elif not is_image:
             state[current_field] = event.message.message
         else:
