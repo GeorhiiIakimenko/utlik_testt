@@ -3,8 +3,11 @@ from telethon import TelegramClient, events
 import openai
 import aiohttp
 from telethon.tl.functions.messages import SendMessageRequest
+from telethon.errors.rpcerrorlist import ChatAdminRequiredError, UserPrivacyRestrictedError
 from telethon.tl.types import InputPeerUser
 import random
+import base64
+import requests
 import os
 
 # Set up logging
@@ -12,7 +15,7 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # OpenAI API key
-openai.api_key = 'APi key'
+openai.api_key = "APi"
 
 # Your API ID and Hash from https://my.telegram.org
 api_id = 29536561
@@ -97,7 +100,7 @@ fields = [
 
 # Function to send data to Bitrix24
 async def send_data_to_bitrix(data):
-    bitrix_webhook_url = 'https://b24-2k8cw3.bitrix24.by/rest/10/wisly82rw0dlne2m/crm.lead.add.json'
+    bitrix_webhook_url = 'https://b24-aoh6pm.bitrix24.by/rest/1/73qmo797mpgi2oib/crm.lead.add.json'
     lead_data = {
         'fields': {
             'TITLE': f"{data.get('surname')} {data.get('first_name')} {data.get('patronymic')}",
@@ -181,6 +184,32 @@ async def send_data_to_bitrix(data):
                 return None
 
 
+def encode_image_to_base64(img_path: str = None) -> str:
+    if img_path is None:
+        logger.error("Image path is None")
+        return ""
+
+    if os.path.isfile(img_path):
+        try:
+            with open(img_path, "rb") as image_file:
+                return base64.b64encode(image_file.read()).decode('utf-8')
+        except Exception as e:
+            logger.error(f"Error reading local file: {e}")
+            return ""
+    else:
+        try:
+            response = requests.get(img_path)
+            if response.status_code == 200:
+                image_data = response.content
+                return base64.b64encode(image_data).decode('utf-8')
+            else:
+                logger.error(f"Error fetching image from URL: {response.status_code}")
+                return ""
+        except Exception as e:
+            logger.error(f"Error fetching image from URL: {e}")
+            return ""
+
+
 async def process_next_field(event, state, index):
     if index < len(fields):
         field, label, mandatory, is_image = fields[index]
@@ -249,6 +278,10 @@ async def message_handler(event):
             await event.respond(f"Сообщение отправлено пользователю с номером {phone_number}.")
         else:
             await event.respond(f"Не удалось найти пользователя с номером {phone_number}.")
+    except ChatAdminRequiredError:
+        await event.respond("Ошибка: Необходимы права администратора для отправки сообщений в этот чат.")
+    except UserPrivacyRestrictedError:
+        await event.respond(f"Ошибка: Пользователь с номером {phone_number} ограничил получение сообщений от незнакомцев.")
     except Exception as e:
         await event.respond(f"Не удалось отправить сообщение пользователю с номером {phone_number}. Ошибка: {str(e)}")
 
@@ -265,17 +298,16 @@ async def generic_handler(event):
         is_image = state['is_image']
 
         if is_image and event.message.photo:
-            photo = event.message.photo[-1]  # Get the highest resolution photo
-            photo_file = await client.download_media(photo)
-            photo_dir = 'photos'
-            if not os.path.exists(photo_dir):
-                os.makedirs(photo_dir)
-            photo_path = f"{photo_dir}/{photo.id}.jpg"
-            os.rename(photo_file, photo_path)
+            # Download the photo
+            photo_file = await client.download_media(event.message.photo)
 
-            file_id = photo.id
-            file_url = f"https://api.telegram.org/file/bot{api_hash}/{photo_path}"
-            state[current_field] = file_url
+            # Encode the photo to base64
+            base64_image = encode_image_to_base64(photo_file)
+            if base64_image:
+                state[current_field] = base64_image
+            else:
+                await event.respond("Ошибка при конвертации изображения.")
+
         elif not is_image:
             state[current_field] = event.message.message
         else:
@@ -288,7 +320,6 @@ async def generic_handler(event):
         prompt = event.message.message
         response = await fetch_gpt_response(prompt)
         await event.respond(response)
-
 
 async def main():
     await client.connect()
